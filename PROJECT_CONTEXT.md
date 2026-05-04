@@ -67,7 +67,9 @@ Ini adalah aplikasi web single-page untuk mencatat pengeluaran pribadi/umum. Apl
   - mode bulanan selesai dibanding full bulan sebelumnya
   - mode tahunan dibanding tahun sebelumnya
   - custom range dibanding range sebelumnya dengan durasi sama
+- Periode dan pembanding dihitung memakai tanggal lokal agar tidak bergeser karena konversi UTC.
 - Row kategori menampilkan nominal, kontribusi total, dan status naik/turun/stabil/baru.
+- Kalkulasi summary, filter, dan comparison kategori memakai normalisasi nama kategori agar data lama/custom dengan beda spasi atau kapitalisasi tetap terbaca sebagai kategori yang sama.
 - Quick Add Expense:
   - contoh input `35000 kopi kenangan`
   - mendukung nominal normal seperti `5000`, serta `35k`, `35rb`, `35 rb`, `1.2jt`, `1,2jt`
@@ -82,6 +84,11 @@ Ini adalah aplikasi web single-page untuk mencatat pengeluaran pribadi/umum. Apl
 - Learning rule sederhana:
   - jika user edit kategori transaksi, app menyimpan keyword dari catatan ke kategori pilihan
   - rule dipakai lebih dulu saat Quick Add berikutnya
+- Setting keyword map:
+  - tombol `Setting Keyword` membuka master data keyword per kategori
+  - user bisa tambah, edit, dan hapus keyword
+  - keyword map tersimpan di `localStorage`
+  - Quick Add memakai keyword map terbaru dari setting
 - Hapus transaksi.
 - Edit transaksi melalui modal/bottom sheet yang sama dengan tambah transaksi.
 - Tambah transaksi melalui modal desktop dan bottom sheet mobile.
@@ -168,5 +175,6 @@ Lanjutkan project Catat Pengeluaran di C:\Users\Andika\Documents\New project. Ba
   - `EmptyState`
   - `PeriodSelector`
   - `QuickAddExpense`
+  - `KeywordSettingsModal`
   - `InsightCard`
 - Pertimbangkan migrasi desain ke Tailwind/shadcn dan Recharts jika nanti ingin mengikuti brief teknis penuh.

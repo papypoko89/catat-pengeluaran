@@ -87,3 +87,5 @@ export type CategoryComparison = {
 };
 
 export type UserCategoryRules = Record<string, string>;
+
+export type KeywordMap = Record<string, string[]>;

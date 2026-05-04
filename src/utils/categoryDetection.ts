@@ -1,7 +1,7 @@
 import { ALL_CATEGORIES, getAllCategories, normalizeCategory } from "../data/categories";
-import { UserCategoryRules } from "../types";
+import { KeywordMap, UserCategoryRules } from "../types";
 
-const keywordMap: Record<string, string[]> = {
+export const defaultKeywordMap: KeywordMap = {
   Makanan: [
     "makan",
     "nasi",
@@ -120,7 +120,25 @@ function findRuleCategory(note: string, userCategoryRules: UserCategoryRules) {
   return matchedRule?.[1];
 }
 
-export function detectCategory(note: string, userCategoryRules: UserCategoryRules) {
+export function normalizeKeyword(value: string) {
+  return normalizeText(value);
+}
+
+export function mergeKeywordMapWithCategories(keywordMap: KeywordMap, categoryNames: string[]) {
+  return categoryNames.reduce<KeywordMap>(
+    (current, categoryName) => ({
+      ...current,
+      [categoryName]: current[categoryName] ?? [],
+    }),
+    { ...keywordMap },
+  );
+}
+
+export function detectCategory(
+  note: string,
+  userCategoryRules: UserCategoryRules,
+  keywordMap: KeywordMap,
+) {
   const ruleCategory = findRuleCategory(note, userCategoryRules);
   if (ruleCategory) {
     return {
@@ -151,6 +169,7 @@ export function parseQuickAddInput(
   input: string,
   customCategoryNames: string[],
   userCategoryRules: UserCategoryRules,
+  keywordMap: KeywordMap,
 ): QuickAddParseResult {
   const amountResult = extractAmount(input);
   if (!amountResult) {
@@ -161,7 +180,7 @@ export function parseQuickAddInput(
   }
 
   const note = amountResult.note || "Tanpa catatan";
-  const detected = detectCategory(note, userCategoryRules);
+  const detected = detectCategory(note, userCategoryRules, keywordMap);
   const allCategoryNames = getAllCategories(customCategoryNames).map((category) => category.name);
   const category = allCategoryNames.includes(detected.category) ? detected.category : ALL_CATEGORIES;
   const finalCategory = category === ALL_CATEGORIES ? "Lainnya" : category;

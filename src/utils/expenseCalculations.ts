@@ -1,4 +1,4 @@
-import { getAllCategories } from "../data/categories";
+import { getAllCategories, normalizeCategory } from "../data/categories";
 import {
   Category,
   CategoryComparison,
@@ -8,6 +8,36 @@ import {
   PeriodRange,
 } from "../types";
 import { formatCurrency } from "./formatters";
+
+function getCategoryKey(categoryName: string) {
+  return normalizeCategory(categoryName).toLowerCase();
+}
+
+function buildCategoryList(allCategories: Category[], expenses: Expense[]) {
+  const categoriesByKey = new Map<string, Category>();
+  const fallbackIcon = allCategories[allCategories.length - 1].icon;
+
+  allCategories.forEach((category) => {
+    categoriesByKey.set(getCategoryKey(category.name), category);
+  });
+
+  expenses.forEach((expense) => {
+    const categoryName = normalizeCategory(expense.category);
+    const categoryKey = getCategoryKey(categoryName);
+
+    if (!categoriesByKey.has(categoryKey)) {
+      categoriesByKey.set(categoryKey, {
+        name: categoryName,
+        color: "#64748b",
+        softColor: "#f1f5f9",
+        icon: fallbackIcon,
+        isCustom: true,
+      });
+    }
+  });
+
+  return Array.from(categoriesByKey.values());
+}
 
 export function getMonthlyExpenses(expenses: Expense[], selectedMonth: string) {
   return expenses
@@ -26,24 +56,12 @@ export function getPeriodSummary(
   allCategories: Category[],
 ): MonthlySummary {
   const total = periodExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const categoriesWithExpenseNames = Array.from(
-    new Set([...allCategories.map((category) => category.name), ...periodExpenses.map((expense) => expense.category)]),
-  );
-  const enrichedCategories = categoriesWithExpenseNames.map(
-    (categoryName) =>
-      allCategories.find((category) => category.name === categoryName) ?? {
-        name: categoryName,
-        color: "#64748b",
-        softColor: "#f1f5f9",
-        icon: allCategories[allCategories.length - 1].icon,
-        isCustom: true,
-      },
-  );
+  const enrichedCategories = buildCategoryList(allCategories, periodExpenses);
   const categoryTotals = enrichedCategories
     .map((category) => ({
       category,
       total: periodExpenses
-        .filter((expense) => expense.category === category.name)
+        .filter((expense) => getCategoryKey(expense.category) === getCategoryKey(category.name))
         .reduce((sum, expense) => sum + expense.amount, 0),
     }))
     .filter((item) => item.total > 0)
@@ -74,7 +92,8 @@ export function filterExpenses(
 
   return periodExpenses.filter((expense) => {
     const matchesCategory =
-      categoryFilter === allCategoriesLabel || expense.category === categoryFilter;
+      categoryFilter === allCategoriesLabel ||
+      getCategoryKey(expense.category) === getCategoryKey(categoryFilter);
     const searchableText = `${expense.category} ${expense.note} ${expense.date} ${
       expense.amount
     } ${formatCurrency(expense.amount)}`.toLowerCase();
@@ -92,8 +111,10 @@ export function groupExpensesByDate(expenses: Expense[]) {
 }
 
 function getCategoryTotal(expenses: Expense[], categoryName: string) {
+  const categoryKey = getCategoryKey(categoryName);
+
   return expenses
-    .filter((expense) => expense.category === categoryName)
+    .filter((expense) => getCategoryKey(expense.category) === categoryKey)
     .reduce((sum, expense) => sum + expense.amount, 0);
 }
 
@@ -126,26 +147,11 @@ export function getCategoryComparisons(
     periodRange.comparisonStartDate,
     periodRange.comparisonEndDate,
   );
-  const categoryNames = Array.from(
-    new Set([
-      ...allCategories.map((category) => category.name),
-      ...currentExpenses.map((expense) => expense.category),
-      ...previousExpenses.map((expense) => expense.category),
-    ]),
-  );
+  const categories = buildCategoryList(allCategories, [...currentExpenses, ...previousExpenses]);
 
-  return categoryNames.map((categoryName) => {
-    const category =
-      allCategories.find((item) => item.name === categoryName) ??
-      ({
-        name: categoryName,
-        color: "#64748b",
-        softColor: "#f1f5f9",
-        icon: allCategories[allCategories.length - 1].icon,
-        isCustom: true,
-      } as Category);
-    const currentTotal = getCategoryTotal(currentExpenses, categoryName);
-    const previousTotal = getCategoryTotal(previousExpenses, categoryName);
+  return categories.map((category) => {
+    const currentTotal = getCategoryTotal(currentExpenses, category.name);
+    const previousTotal = getCategoryTotal(previousExpenses, category.name);
     const difference = currentTotal - previousTotal;
     const percentageChange =
       previousTotal === 0 ? null : Math.round((difference / previousTotal) * 100);

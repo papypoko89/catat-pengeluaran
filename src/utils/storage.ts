@@ -1,10 +1,12 @@
 import { normalizeCategory } from "../data/categories";
-import { Expense } from "../types";
+import { Expense, KeywordMap } from "../types";
+import { normalizeKeyword } from "./categoryDetection";
 
 export const EXPENSES_STORAGE_KEY = "catat-pengeluaran.expenses";
 export const BUDGETS_STORAGE_KEY = "catat-pengeluaran.budgets";
 export const CUSTOM_CATEGORIES_STORAGE_KEY = "catat-pengeluaran.custom-categories";
 export const CATEGORY_RULES_STORAGE_KEY = "catat-pengeluaran.category-rules";
+export const KEYWORD_MAP_STORAGE_KEY = "catat-pengeluaran.keyword-map";
 
 export function parseStoredExpenses(value: string | null): Expense[] {
   if (!value) return [];
@@ -72,6 +74,33 @@ export function parseStoredCategoryRules(value: string | null): Record<string, s
     );
   } catch {
     return {};
+  }
+}
+
+export function parseStoredKeywordMap(value: string | null): KeywordMap | null {
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value) as KeywordMap;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([category, keywords]) => typeof category === "string" && Array.isArray(keywords))
+        .map(([category, keywords]) => [
+          normalizeCategory(category),
+          Array.from(
+            new Set(
+              keywords
+                .filter((keyword) => typeof keyword === "string")
+                .map((keyword) => normalizeKeyword(keyword))
+                .filter(Boolean),
+            ),
+          ),
+        ]),
+    );
+  } catch {
+    return null;
   }
 }
 

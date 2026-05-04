@@ -28,13 +28,13 @@ function getChartBackground(total: number, categoryTotals: CategoryTotal[]) {
 function getComparisonCopy(comparison: CategoryComparison) {
   if (comparison.status === "new") return "Baru periode ini";
   if (comparison.status === "none") return "Tidak ada pengeluaran";
-  if (comparison.status === "stable") return "→ Stabil vs periode sebelumnya";
+  if (comparison.status === "stable") return "Stabil vs periode sebelumnya";
   if (comparison.status === "down") {
     const percentage = comparison.percentageChange === null ? 100 : Math.abs(comparison.percentageChange);
-    return `↓ ${percentage}% vs periode sebelumnya`;
+    return `Turun ${percentage}% vs periode sebelumnya`;
   }
 
-  return `↑ ${comparison.percentageChange ?? 0}% vs periode sebelumnya`;
+  return `Naik ${comparison.percentageChange ?? 0}% vs periode sebelumnya`;
 }
 
 export function CategoryChart({
@@ -91,7 +91,7 @@ export function CategoryChart({
                     />
                   </div>
                   <small>
-                    {percentage.toFixed(0)}% dari total periode ini · {getComparisonCopy(item)}
+                    {percentage.toFixed(0)}% dari total periode ini - {getComparisonCopy(item)}
                   </small>
                 </div>
               );

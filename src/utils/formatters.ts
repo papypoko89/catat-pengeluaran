@@ -9,7 +9,15 @@ const dateFormatter = new Intl.DateTimeFormat("id-ID", {
   year: "numeric",
 });
 
-export const today = new Date().toISOString().slice(0, 10);
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+export const today = toLocalDateInputValue(new Date());
 export const currentMonth = today.slice(0, 7);
 
 export function formatCurrency(value: number) {

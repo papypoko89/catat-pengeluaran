@@ -6,6 +6,7 @@ import {
   ReceiptText,
   RotateCcw,
   Save,
+  Settings,
   Wallet,
   Zap,
 } from "lucide-react";
@@ -14,6 +15,7 @@ import { BudgetProgress } from "./components/BudgetProgress";
 import { CategoryChart } from "./components/CategoryChart";
 import { ExpenseModal } from "./components/ExpenseModal";
 import { InsightCard } from "./components/InsightCard";
+import { KeywordSettingsModal } from "./components/KeywordSettingsModal";
 import { PeriodSelector } from "./components/PeriodSelector";
 import { QuickAddExpense } from "./components/QuickAddExpense";
 import { SummaryCard } from "./components/SummaryCard";
@@ -25,8 +27,13 @@ import {
   isDuplicateCategoryName,
   normalizeCategory,
 } from "./data/categories";
-import { Expense, ExpenseDraft, FormErrors } from "./types";
-import { getLearningKeyword, parseQuickAddInput } from "./utils/categoryDetection";
+import { Expense, ExpenseDraft, FormErrors, KeywordMap } from "./types";
+import {
+  defaultKeywordMap,
+  getLearningKeyword,
+  mergeKeywordMapWithCategories,
+  parseQuickAddInput,
+} from "./utils/categoryDetection";
 import { buildThreeMonthDemoExpenses, demoBudgets, demoMonths } from "./utils/demoData";
 import {
   filterExpenses,
@@ -48,10 +55,12 @@ import {
   CATEGORY_RULES_STORAGE_KEY,
   CUSTOM_CATEGORIES_STORAGE_KEY,
   EXPENSES_STORAGE_KEY,
+  KEYWORD_MAP_STORAGE_KEY,
   parseStoredBudgets,
   parseStoredCategoryRules,
   parseStoredCustomCategories,
   parseStoredExpenses,
+  parseStoredKeywordMap,
 } from "./utils/storage";
 
 function App() {
@@ -67,11 +76,15 @@ function App() {
   const [categoryRules, setCategoryRules] = useState<Record<string, string>>(() =>
     parseStoredCategoryRules(localStorage.getItem(CATEGORY_RULES_STORAGE_KEY)),
   );
+  const [keywordMap, setKeywordMap] = useState<KeywordMap>(
+    () => parseStoredKeywordMap(localStorage.getItem(KEYWORD_MAP_STORAGE_KEY)) ?? defaultKeywordMap,
+  );
   const [period, setPeriod] = useState(getDefaultPeriod);
   const [budgetDraft, setBudgetDraft] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isKeywordSettingsOpen, setIsKeywordSettingsOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [draft, setDraft] = useState<ExpenseDraft>(() => getInitialDraft(currentMonth));
   const [formErrors, setFormErrors] = useState<FormErrors>({});
@@ -93,6 +106,10 @@ function App() {
   }, [categoryRules]);
 
   useEffect(() => {
+    localStorage.setItem(KEYWORD_MAP_STORAGE_KEY, JSON.stringify(keywordMap));
+  }, [keywordMap]);
+
+  useEffect(() => {
     document.body.classList.toggle("modal-open", isExpenseModalOpen);
     return () => document.body.classList.remove("modal-open");
   }, [isExpenseModalOpen]);
@@ -106,6 +123,14 @@ function App() {
 
     return getAllCategories([...customCategories, ...existingCategoryNames]);
   }, [customCategories, expenses]);
+  const effectiveKeywordMap = useMemo(
+    () =>
+      mergeKeywordMapWithCategories(
+        keywordMap,
+        allCategories.map((category) => category.name),
+      ),
+    [allCategories, keywordMap],
+  );
 
   useEffect(() => {
     setBudgetDraft(budgets[activeBudgetMonth] ? String(budgets[activeBudgetMonth]) : "");
@@ -257,6 +282,7 @@ function App() {
     setBudgets({});
     setCustomCategories([]);
     setCategoryRules({});
+    setKeywordMap(defaultKeywordMap);
     setSearchQuery("");
     setCategoryFilter(ALL_CATEGORIES);
   }
@@ -272,7 +298,7 @@ function App() {
   }
 
   function handleQuickAdd(value: string) {
-    const result = parseQuickAddInput(value, customCategories, categoryRules);
+    const result = parseQuickAddInput(value, customCategories, categoryRules, effectiveKeywordMap);
     if (!result.ok) return result;
 
     const expense: Expense = {
@@ -327,6 +353,10 @@ function App() {
         </div>
 
         <div className="hero-actions">
+          <button className="ghost-button" type="button" onClick={() => setIsKeywordSettingsOpen(true)}>
+            <Settings size={18} />
+            Setting Keyword
+          </button>
           <button className="primary-button" type="button" onClick={openCreateModal}>
             <Plus size={19} />
             Tambah Pengeluaran
@@ -488,6 +518,14 @@ function App() {
         onSubmit={handleExpenseSubmit}
         onDraftChange={updateDraft}
         onCreateCategory={handleCreateCategory}
+      />
+
+      <KeywordSettingsModal
+        isOpen={isKeywordSettingsOpen}
+        categories={allCategories}
+        keywordMap={effectiveKeywordMap}
+        onClose={() => setIsKeywordSettingsOpen(false)}
+        onChange={setKeywordMap}
       />
     </main>
   );

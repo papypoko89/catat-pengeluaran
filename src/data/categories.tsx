@@ -76,20 +76,29 @@ export const categories = baseCategories;
 export const categoryNames = baseCategories.map((category) => category.name);
 
 const categoryAliases: Record<string, string> = {
-  "Makanan & Minuman": "Makanan",
+  "makanan & minuman": "Makanan",
 };
 
 export function normalizeCategory(category: string) {
-  const normalized = categoryAliases[category] ?? category;
+  const trimmedCategory = category.trim();
+  const normalized = categoryAliases[trimmedCategory.toLowerCase()] ?? trimmedCategory;
   return normalized.trim() || "Lainnya";
 }
 
 export function getAllCategories(customCategoryNames: string[] = []): Category[] {
-  const normalizedCustomNames = customCategoryNames
-    .map((category) => normalizeCategory(category))
-    .filter((category) => category && !categoryNames.includes(category));
+  const baseCategoryKeys = new Set(categoryNames.map((category) => category.toLowerCase()));
+  const customCategoryMap = new Map<string, string>();
 
-  const uniqueCustomNames = Array.from(new Set(normalizedCustomNames));
+  customCategoryNames.forEach((category) => {
+    const normalizedCategory = normalizeCategory(category);
+    const categoryKey = normalizedCategory.toLowerCase();
+
+    if (normalizedCategory && !baseCategoryKeys.has(categoryKey) && !customCategoryMap.has(categoryKey)) {
+      customCategoryMap.set(categoryKey, normalizedCategory);
+    }
+  });
+
+  const uniqueCustomNames = Array.from(customCategoryMap.values());
   const customCategories = uniqueCustomNames.map((categoryName, index) => {
     const [color, softColor] = customCategoryColors[index % customCategoryColors.length];
 
@@ -107,8 +116,10 @@ export function getAllCategories(customCategoryNames: string[] = []): Category[]
 
 export function getCategory(categoryName: string, customCategoryNames: string[] = []) {
   const allCategories = getAllCategories(customCategoryNames);
+  const normalizedName = normalizeCategory(categoryName).toLowerCase();
+
   return (
-    allCategories.find((category) => category.name === normalizeCategory(categoryName)) ??
+    allCategories.find((category) => category.name.toLowerCase() === normalizedName) ??
     allCategories[allCategories.length - 1]
   );
 }
