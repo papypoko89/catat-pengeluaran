@@ -12,7 +12,9 @@ export function SummaryCard({ label, value, helper, icon }: SummaryCardProps) {
     <article className="summary-card">
       <div className="summary-icon">{icon}</div>
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong key={value} className="animated-value">
+        {value}
+      </strong>
       <small>{helper}</small>
     </article>
   );

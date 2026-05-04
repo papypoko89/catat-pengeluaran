@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { ALL_CATEGORIES } from "../data/categories";
 import { Category, Expense } from "../types";
@@ -17,6 +18,7 @@ type TransactionListProps = {
   onDemo: () => void;
   onEdit: (expense: Expense) => void;
   onDelete: (id: string) => void;
+  highlightedExpenseId?: string | null;
 };
 
 export function TransactionList({
@@ -31,8 +33,9 @@ export function TransactionList({
   onDemo,
   onEdit,
   onDelete,
+  highlightedExpenseId,
 }: TransactionListProps) {
-  const groupedExpenses = groupExpensesByDate(visibleExpenses);
+  const groupedExpenses = useMemo(() => groupExpensesByDate(visibleExpenses), [visibleExpenses]);
 
   return (
     <article className="panel transaction-panel">
@@ -100,7 +103,14 @@ export function TransactionList({
                   categories[categories.length - 1];
 
                 return (
-                  <article className="transaction-item" key={expense.id}>
+                  <article
+                    className={
+                      expense.id === highlightedExpenseId
+                        ? "transaction-item is-new"
+                        : "transaction-item"
+                    }
+                    key={expense.id}
+                  >
                     <div
                       className="transaction-category-icon"
                       style={{ background: category.softColor, color: category.color }}

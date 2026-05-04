@@ -1,17 +1,55 @@
 import { CircleAlert, Sparkles, Zap } from "lucide-react";
 import { MonthlySummary } from "../types";
-import { formatMonth } from "../utils/formatters";
+import { formatCurrency, formatMonth } from "../utils/formatters";
 
 type InsightCardProps = {
   summary: MonthlySummary;
   monthlyBudget: number;
   selectedMonth: string;
+  currentComparisonTotal: number;
+  previousTotal: number;
   onDemo: () => void;
 };
 
-export function InsightCard({ summary, monthlyBudget, selectedMonth, onDemo }: InsightCardProps) {
-  const budgetPercentage =
-    monthlyBudget > 0 ? Math.round((summary.total / monthlyBudget) * 100) : 0;
+function getSpendingChangeInsight(currentTotal: number, previousTotal: number) {
+  if (currentTotal === 0 && previousTotal === 0) {
+    return "Belum ada pengeluaran di periode ini dan periode sebelumnya.";
+  }
+
+  if (previousTotal === 0) {
+    return `Pengeluaran periode ini mulai tercatat sebesar ${formatCurrency(currentTotal)}.`;
+  }
+
+  const change = Math.round(((currentTotal - previousTotal) / previousTotal) * 100);
+  if (Math.abs(change) < 5) return "Pengeluaran relatif stabil dibanding periode sebelumnya.";
+  if (change > 0) return `Pengeluaran naik ${change}% dibanding periode sebelumnya.`;
+
+  return `Pengeluaran turun ${Math.abs(change)}% dibanding periode sebelumnya.`;
+}
+
+function getBudgetStatusInsight(total: number, monthlyBudget: number, selectedMonth: string) {
+  if (monthlyBudget <= 0) {
+    return "Atur budget untuk melihat status sisa dana secara otomatis.";
+  }
+
+  const budgetPercentage = Math.round((total / monthlyBudget) * 100);
+  const status =
+    budgetPercentage < 70 ? "Aman" : budgetPercentage <= 100 ? "Waspada" : "Melebihi budget";
+
+  return `${status}: ${budgetPercentage}% dari budget ${formatMonth(selectedMonth)} sudah terpakai.`;
+}
+
+export function InsightCard({
+  summary,
+  monthlyBudget,
+  selectedMonth,
+  currentComparisonTotal,
+  previousTotal,
+  onDemo,
+}: InsightCardProps) {
+  const topCategoryInsight = summary.largestCategory
+    ? `Kategori terbesar periode ini: ${summary.largestCategory.category.name}.`
+    : "Belum ada kategori dominan di periode ini.";
 
   return (
     <section className="insight-card">
@@ -22,17 +60,10 @@ export function InsightCard({ summary, monthlyBudget, selectedMonth, onDemo }: I
           <Sparkles size={22} />
         )}
       </div>
-      <div>
-        <strong>
-          {summary.largestCategory
-            ? `Pengeluaran terbesar bulan ini: ${summary.largestCategory.category.name}`
-            : "Belum ada pola pengeluaran bulan ini"}
-        </strong>
-        <p>
-          {monthlyBudget > 0
-            ? `Kamu sudah memakai ${budgetPercentage}% dari budget ${formatMonth(selectedMonth)}.`
-            : "Atur budget untuk melihat status sisa dana secara otomatis."}
-        </p>
+      <div className="insight-copy">
+        <strong>{getSpendingChangeInsight(currentComparisonTotal, previousTotal)}</strong>
+        <p>{topCategoryInsight}</p>
+        <p>{getBudgetStatusInsight(summary.total, monthlyBudget, selectedMonth)}</p>
       </div>
       <button className="ghost-button compact" type="button" onClick={onDemo}>
         <Zap size={17} />

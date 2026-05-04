@@ -82,12 +82,15 @@ function App() {
   const [period, setPeriod] = useState(getDefaultPeriod);
   const [budgetDraft, setBudgetDraft] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isKeywordSettingsOpen, setIsKeywordSettingsOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [draft, setDraft] = useState<ExpenseDraft>(() => getInitialDraft(currentMonth));
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [toast, setToast] = useState<{ id: string; message: string } | null>(null);
+  const [highlightedExpenseId, setHighlightedExpenseId] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(EXPENSES_STORAGE_KEY, JSON.stringify(expenses));
@@ -113,6 +116,25 @@ function App() {
     document.body.classList.toggle("modal-open", isExpenseModalOpen);
     return () => document.body.classList.remove("modal-open");
   }, [isExpenseModalOpen]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedSearchQuery(searchQuery), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!toast) return;
+
+    const timeoutId = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!highlightedExpenseId) return;
+
+    const timeoutId = window.setTimeout(() => setHighlightedExpenseId(null), 420);
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedExpenseId]);
 
   const periodRange = useMemo(() => derivePeriodRange(period), [period]);
   const activeBudgetMonth = periodRange.budgetMonth ?? currentMonth;
@@ -145,8 +167,34 @@ function App() {
     [allCategories, periodExpenses],
   );
   const visibleExpenses = useMemo(
-    () => filterExpenses(periodExpenses, categoryFilter, ALL_CATEGORIES, searchQuery),
-    [categoryFilter, periodExpenses, searchQuery],
+    () => filterExpenses(periodExpenses, categoryFilter, ALL_CATEGORIES, debouncedSearchQuery),
+    [categoryFilter, debouncedSearchQuery, periodExpenses],
+  );
+  const currentComparisonExpenses = useMemo(
+    () =>
+      getExpensesForRange(
+        expenses,
+        periodRange.comparisonCurrentStartDate,
+        periodRange.comparisonCurrentEndDate,
+      ),
+    [expenses, periodRange.comparisonCurrentEndDate, periodRange.comparisonCurrentStartDate],
+  );
+  const currentComparisonTotal = useMemo(
+    () => currentComparisonExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [currentComparisonExpenses],
+  );
+  const previousComparisonExpenses = useMemo(
+    () =>
+      getExpensesForRange(
+        expenses,
+        periodRange.comparisonStartDate,
+        periodRange.comparisonEndDate,
+      ),
+    [expenses, periodRange.comparisonEndDate, periodRange.comparisonStartDate],
+  );
+  const previousComparisonTotal = useMemo(
+    () => previousComparisonExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [previousComparisonExpenses],
   );
   const categoryComparisons = useMemo(
     () => getCategoryComparisons(expenses, allCategories, periodRange),
@@ -160,6 +208,7 @@ function App() {
   function handlePeriodChange(nextPeriod: typeof period) {
     setPeriod(nextPeriod);
     setSearchQuery("");
+    setDebouncedSearchQuery("");
     setCategoryFilter(ALL_CATEGORIES);
   }
 
@@ -200,6 +249,16 @@ function App() {
     setFormErrors((current) => ({ ...current, [field]: undefined }));
   }
 
+  function showAddFeedback(expense: Expense) {
+    const note = expense.note.trim() || expense.category;
+
+    setHighlightedExpenseId(expense.id);
+    setToast({
+      id: `${expense.id}-${Date.now()}`,
+      message: `${formatCurrency(expense.amount)} \u2022 ${note}`,
+    });
+  }
+
   function handleExpenseSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -215,19 +274,23 @@ function App() {
       note: draft.note.trim(),
     };
 
-    setExpenses((current) =>
-      editingExpense
-        ? current.map((expense) => {
-            if (expense.id !== editingExpense.id) return expense;
+    if (editingExpense) {
+      setExpenses((current) =>
+        current.map((expense) => {
+          if (expense.id !== editingExpense.id) return expense;
 
-            if (expense.category !== nextExpense.category) {
-              learnCategoryRule(nextExpense.note, nextExpense.category);
-            }
+          if (expense.category !== nextExpense.category) {
+            learnCategoryRule(nextExpense.note, nextExpense.category);
+          }
 
-            return nextExpense;
-          })
-        : [nextExpense, ...current],
-    );
+          return nextExpense;
+        }),
+      );
+    } else {
+      setExpenses((current) => [nextExpense, ...current]);
+      showAddFeedback(nextExpense);
+    }
+
     closeExpenseModal();
   }
 
@@ -313,10 +376,11 @@ function App() {
     };
 
     setExpenses((current) => [expense, ...current]);
+    showAddFeedback(expense);
 
     return {
       ok: true,
-      message: `Transaksi berhasil ditambahkan. ${result.message}`,
+      message: result.message,
     };
   }
 
@@ -372,7 +436,9 @@ function App() {
           <div className="hero-card-top">
             <div>
               <span>Total Pengeluaran</span>
-              <strong>{formatCurrency(summary.total)}</strong>
+              <strong key={summary.total} className="animated-value">
+                {formatCurrency(summary.total)}
+              </strong>
               <small>{getPeriodTitle(period)}</small>
             </div>
             <div className="hero-card-icon">
@@ -467,6 +533,8 @@ function App() {
         summary={summary}
         monthlyBudget={isMonthlyMode ? activeBudget : 0}
         selectedMonth={activeBudgetMonth}
+        currentComparisonTotal={currentComparisonTotal}
+        previousTotal={previousComparisonTotal}
         onDemo={handleDemoData}
       />
 
@@ -489,10 +557,12 @@ function App() {
           onDemo={handleDemoData}
           onEdit={openEditModal}
           onDelete={handleDelete}
+          highlightedExpenseId={highlightedExpenseId}
         />
       </section>
 
       <div className="utility-actions">
+        <span className="data-trust-label">Data tersimpan di perangkat ini</span>
         <button className="ghost-button" type="button" onClick={handleDemoData}>
           <Zap size={17} />
           Demo 3 Bulan
@@ -507,6 +577,14 @@ function App() {
         <Plus size={22} />
         Tambah
       </button>
+
+      {toast && (
+        <div className="toast-stack" role="status" aria-live="polite">
+          <div className="app-toast" key={toast.id}>
+            {toast.message}
+          </div>
+        </div>
+      )}
 
       <ExpenseModal
         isOpen={isExpenseModalOpen}

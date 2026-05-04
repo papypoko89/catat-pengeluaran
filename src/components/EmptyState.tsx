@@ -11,11 +11,8 @@ export function EmptyState({ onAdd, onDemo }: EmptyStateProps) {
       <div className="empty-illustration">
         <Sparkles size={28} />
       </div>
-      <h3>Mulai catat pengeluaran pertamamu</h3>
-      <p>
-        Tambahkan transaksi atau gunakan data demo untuk melihat dashboard lengkap dalam beberapa
-        detik.
-      </p>
+      <h3>Mulai catat pengeluaran pertama kamu</h3>
+      <p>Contoh: 35k kopi. Tambahkan transaksi pertama atau gunakan data demo.</p>
       <div className="empty-actions">
         <button className="primary-button" type="button" onClick={onAdd}>
           <Plus size={18} />

@@ -70,7 +70,7 @@ export function parseStoredCategoryRules(value: string | null): Record<string, s
             typeof category === "string" &&
             category.trim().length > 0,
         )
-        .map(([keyword, category]) => [keyword.trim().toLowerCase(), normalizeCategory(category)]),
+        .map(([keyword, category]) => [normalizeKeyword(keyword), normalizeCategory(category)]),
     );
   } catch {
     return {};
