@@ -1,521 +1,494 @@
 import {
+  BarChart3,
   CalendarDays,
-  ChartNoAxesColumnIncreasing,
-  CircleDollarSign,
-  Pencil,
+  PiggyBank,
   Plus,
   ReceiptText,
+  RotateCcw,
   Save,
-  Tags,
-  Trash2,
-  WalletCards,
-  X,
+  Wallet,
+  Zap,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-
-type Expense = {
-  id: string;
-  date: string;
-  amount: number;
-  category: string;
-  note: string;
-};
-
-type ExpenseDraft = Omit<Expense, "id" | "amount"> & {
-  amount: string;
-};
-
-type FilterMode = "day" | "month" | "year";
-
-const STORAGE_KEY = "catat-pengeluaran.expenses";
-
-const CATEGORIES = [
-  "Makanan & Minuman",
-  "Transportasi",
-  "Belanja",
-  "Tagihan",
-  "Hiburan",
-  "Kesehatan",
-  "Pendidikan",
-  "Lainnya",
-];
-
-const categoryColors: Record<string, string> = {
-  "Makanan & Minuman": "#f97316",
-  Transportasi: "#0ea5e9",
-  Belanja: "#ec4899",
-  Tagihan: "#6366f1",
-  Hiburan: "#a855f7",
-  Kesehatan: "#10b981",
-  Pendidikan: "#f59e0b",
-  Lainnya: "#64748b",
-};
-
-const currencyFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-});
-
-const today = new Date().toISOString().slice(0, 10);
-const currentMonth = today.slice(0, 7);
-const currentYear = today.slice(0, 4);
-
-function formatCurrency(value: number) {
-  return currencyFormatter.format(value);
-}
-
-function parseStoredExpenses(value: string | null): Expense[] {
-  if (!value) return [];
-
-  try {
-    const parsed = JSON.parse(value) as Expense[];
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter(
-      (item) =>
-        typeof item.id === "string" &&
-        typeof item.date === "string" &&
-        typeof item.amount === "number" &&
-        typeof item.category === "string" &&
-        typeof item.note === "string",
-    );
-  } catch {
-    return [];
-  }
-}
-
-function getFilterDefault(mode: FilterMode) {
-  if (mode === "day") return today;
-  if (mode === "month") return currentMonth;
-  return currentYear;
-}
-
-function matchesFilter(expense: Expense, mode: FilterMode, value: string) {
-  if (mode === "day") return expense.date === value;
-  if (mode === "month") return expense.date.startsWith(value);
-  return expense.date.startsWith(value);
-}
+import { BudgetProgress } from "./components/BudgetProgress";
+import { CategoryChart } from "./components/CategoryChart";
+import { ExpenseModal } from "./components/ExpenseModal";
+import { InsightCard } from "./components/InsightCard";
+import { PeriodSelector } from "./components/PeriodSelector";
+import { QuickAddExpense } from "./components/QuickAddExpense";
+import { SummaryCard } from "./components/SummaryCard";
+import { TransactionList } from "./components/TransactionList";
+import {
+  ALL_CATEGORIES,
+  baseCategories,
+  getAllCategories,
+  isDuplicateCategoryName,
+  normalizeCategory,
+} from "./data/categories";
+import { Expense, ExpenseDraft, FormErrors } from "./types";
+import { getLearningKeyword, parseQuickAddInput } from "./utils/categoryDetection";
+import { buildThreeMonthDemoExpenses, demoBudgets, demoMonths } from "./utils/demoData";
+import {
+  filterExpenses,
+  getCategoryComparisons,
+  getExpensesForRange,
+  getPeriodSummary,
+} from "./utils/expenseCalculations";
+import { getInitialDraft, validateDraft } from "./utils/expenseForm";
+import {
+  currentMonth,
+  formatCurrency,
+  formatNumberInput,
+  onlyDigits,
+  today,
+} from "./utils/formatters";
+import { derivePeriodRange, getDefaultPeriod, getPeriodTitle } from "./utils/period";
+import {
+  BUDGETS_STORAGE_KEY,
+  CATEGORY_RULES_STORAGE_KEY,
+  CUSTOM_CATEGORIES_STORAGE_KEY,
+  EXPENSES_STORAGE_KEY,
+  parseStoredBudgets,
+  parseStoredCategoryRules,
+  parseStoredCustomCategories,
+  parseStoredExpenses,
+} from "./utils/storage";
 
 function App() {
   const [expenses, setExpenses] = useState<Expense[]>(() =>
-    parseStoredExpenses(localStorage.getItem(STORAGE_KEY)),
+    parseStoredExpenses(localStorage.getItem(EXPENSES_STORAGE_KEY)),
   );
-  const [date, setDate] = useState(today);
-  const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [note, setNote] = useState("");
-  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
-  const [editingDraft, setEditingDraft] = useState<ExpenseDraft | null>(null);
-  const [filterMode, setFilterMode] = useState<FilterMode>("month");
-  const [filterValue, setFilterValue] = useState(currentMonth);
+  const [budgets, setBudgets] = useState<Record<string, number>>(() =>
+    parseStoredBudgets(localStorage.getItem(BUDGETS_STORAGE_KEY)),
+  );
+  const [customCategories, setCustomCategories] = useState<string[]>(() =>
+    parseStoredCustomCategories(localStorage.getItem(CUSTOM_CATEGORIES_STORAGE_KEY)),
+  );
+  const [categoryRules, setCategoryRules] = useState<Record<string, string>>(() =>
+    parseStoredCategoryRules(localStorage.getItem(CATEGORY_RULES_STORAGE_KEY)),
+  );
+  const [period, setPeriod] = useState(getDefaultPeriod);
+  const [budgetDraft, setBudgetDraft] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [draft, setDraft] = useState<ExpenseDraft>(() => getInitialDraft(currentMonth));
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+    localStorage.setItem(EXPENSES_STORAGE_KEY, JSON.stringify(expenses));
   }, [expenses]);
 
-  const filteredExpenses = useMemo(() => {
-    return expenses
-      .filter((expense) => matchesFilter(expense, filterMode, filterValue))
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [expenses, filterMode, filterValue]);
+  useEffect(() => {
+    localStorage.setItem(BUDGETS_STORAGE_KEY, JSON.stringify(budgets));
+  }, [budgets]);
 
-  const summary = useMemo(() => {
-    const categoryTotals = CATEGORIES.map((item) => ({
-      category: item,
-      total: filteredExpenses
-        .filter((expense) => expense.category === item)
-        .reduce((sum, expense) => sum + expense.amount, 0),
-    }))
-      .filter((item) => item.total > 0)
-      .sort((a, b) => b.total - a.total);
+  useEffect(() => {
+    localStorage.setItem(CUSTOM_CATEGORIES_STORAGE_KEY, JSON.stringify(customCategories));
+  }, [customCategories]);
 
-    const total = filteredExpenses.reduce(
-      (sum, expense) => sum + expense.amount,
-      0,
-    );
-    const largestCategory = categoryTotals[0];
+  useEffect(() => {
+    localStorage.setItem(CATEGORY_RULES_STORAGE_KEY, JSON.stringify(categoryRules));
+  }, [categoryRules]);
 
-    return {
-      total,
-      transactionCount: filteredExpenses.length,
-      largestCategory,
-      categoryTotals,
-    };
-  }, [filteredExpenses]);
+  useEffect(() => {
+    document.body.classList.toggle("modal-open", isExpenseModalOpen);
+    return () => document.body.classList.remove("modal-open");
+  }, [isExpenseModalOpen]);
 
-  const filterLabel =
-    filterMode === "day"
-      ? "Tanggal"
-      : filterMode === "month"
-        ? "Bulan"
-        : "Tahun";
+  const periodRange = useMemo(() => derivePeriodRange(period), [period]);
+  const activeBudgetMonth = periodRange.budgetMonth ?? currentMonth;
+  const allCategories = useMemo(() => {
+    const existingCategoryNames = expenses
+      .map((expense) => expense.category)
+      .filter((category) => !baseCategories.some((baseCategory) => baseCategory.name === category));
 
-  function handleFilterModeChange(mode: FilterMode) {
-    setFilterMode(mode);
-    setFilterValue(getFilterDefault(mode));
+    return getAllCategories([...customCategories, ...existingCategoryNames]);
+  }, [customCategories, expenses]);
+
+  useEffect(() => {
+    setBudgetDraft(budgets[activeBudgetMonth] ? String(budgets[activeBudgetMonth]) : "");
+  }, [activeBudgetMonth, budgets]);
+
+  const periodExpenses = useMemo(
+    () => getExpensesForRange(expenses, periodRange.startDate, periodRange.endDate),
+    [expenses, periodRange.endDate, periodRange.startDate],
+  );
+  const summary = useMemo(
+    () => getPeriodSummary(periodExpenses, allCategories),
+    [allCategories, periodExpenses],
+  );
+  const visibleExpenses = useMemo(
+    () => filterExpenses(periodExpenses, categoryFilter, ALL_CATEGORIES, searchQuery),
+    [categoryFilter, periodExpenses, searchQuery],
+  );
+  const categoryComparisons = useMemo(
+    () => getCategoryComparisons(expenses, allCategories, periodRange),
+    [allCategories, expenses, periodRange],
+  );
+
+  const activeBudget = budgets[activeBudgetMonth] ?? 0;
+  const remainingBudget = activeBudget - summary.total;
+  const isMonthlyMode = periodRange.mode === "month";
+
+  function handlePeriodChange(nextPeriod: typeof period) {
+    setPeriod(nextPeriod);
+    setSearchQuery("");
+    setCategoryFilter(ALL_CATEGORIES);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const numericAmount = Number(amount);
-    if (!date || !category || !Number.isFinite(numericAmount) || numericAmount <= 0) {
-      return;
-    }
-
-    const expense: Expense = {
-      id: crypto.randomUUID(),
-      date,
-      amount: Math.round(numericAmount),
-      category,
-      note: note.trim(),
-    };
-
-    setExpenses((current) => [expense, ...current]);
-    setAmount("");
-    setNote("");
+  function openCreateModal() {
+    setEditingExpense(null);
+    const defaultDraft = getInitialDraft(activeBudgetMonth);
+    setDraft({
+      ...defaultDraft,
+      date:
+        today >= periodRange.startDate && today <= periodRange.endDate
+          ? today
+          : periodRange.startDate,
+    });
+    setFormErrors({});
+    setIsExpenseModalOpen(true);
   }
 
-  function handleEdit(expense: Expense) {
-    setEditingExpenseId(expense.id);
-    setEditingDraft({
+  function openEditModal(expense: Expense) {
+    setEditingExpense(expense);
+    setDraft({
       date: expense.date,
       amount: String(expense.amount),
       category: expense.category,
       note: expense.note,
     });
+    setFormErrors({});
+    setIsExpenseModalOpen(true);
   }
 
-  function updateEditingDraft(field: keyof ExpenseDraft, value: string) {
-    setEditingDraft((current) =>
-      current
-        ? {
-            ...current,
-            [field]: value,
-          }
-        : current,
-    );
+  function closeExpenseModal() {
+    setIsExpenseModalOpen(false);
+    setEditingExpense(null);
+    setFormErrors({});
   }
 
-  function handleSaveEdit(event: FormEvent<HTMLFormElement>, id: string) {
+  function updateDraft(field: keyof ExpenseDraft, value: string) {
+    setDraft((current) => ({ ...current, [field]: field === "amount" ? onlyDigits(value) : value }));
+    setFormErrors((current) => ({ ...current, [field]: undefined }));
+  }
+
+  function handleExpenseSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!editingDraft) return;
 
-    const numericAmount = Number(editingDraft.amount);
+    const errors = validateDraft(draft);
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    const nextExpense: Expense = {
+      id: editingExpense?.id ?? crypto.randomUUID(),
+      date: draft.date,
+      amount: Math.round(Number(draft.amount)),
+      category: draft.category,
+      note: draft.note.trim(),
+    };
+
+    setExpenses((current) =>
+      editingExpense
+        ? current.map((expense) => {
+            if (expense.id !== editingExpense.id) return expense;
+
+            if (expense.category !== nextExpense.category) {
+              learnCategoryRule(nextExpense.note, nextExpense.category);
+            }
+
+            return nextExpense;
+          })
+        : [nextExpense, ...current],
+    );
+    closeExpenseModal();
+  }
+
+  function handleBudgetSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const numericBudget = Number(budgetDraft);
+    if (!Number.isFinite(numericBudget) || numericBudget < 0) return;
+
+    setBudgets((current) => ({
+      ...current,
+      [activeBudgetMonth]: Math.round(numericBudget),
+    }));
+  }
+
+  function handleDelete(id: string) {
+    const target = expenses.find((expense) => expense.id === id);
+    const description = target?.note || target?.category || "transaksi ini";
+
+    if (!window.confirm(`Hapus ${description}? Tindakan ini tidak bisa dibatalkan.`)) return;
+
+    setExpenses((current) => current.filter((expense) => expense.id !== id));
+  }
+
+  function handleDemoData() {
+    const demoExpenses = buildThreeMonthDemoExpenses();
+
+    setExpenses((current) => [
+      ...demoExpenses,
+      ...current.filter(
+        (expense) => !demoMonths.some((month) => expense.id.startsWith(`demo-${month}-`)),
+      ),
+    ]);
+    setBudgets((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        Object.entries(demoBudgets).map(([month, budget]) => [month, current[month] ?? budget]),
+      ),
+    }));
+  }
+
+  function handleResetData() {
     if (
-      !editingDraft.date ||
-      !editingDraft.category ||
-      !Number.isFinite(numericAmount) ||
-      numericAmount <= 0
+      !window.confirm(
+        "Reset semua transaksi dan budget lokal? Data yang dihapus tidak bisa dikembalikan.",
+      )
     ) {
       return;
     }
 
-    setExpenses((current) =>
-      current.map((expense) =>
-        expense.id === id
-          ? {
-              ...expense,
-              date: editingDraft.date,
-              amount: Math.round(numericAmount),
-              category: editingDraft.category,
-              note: editingDraft.note.trim(),
-            }
-          : expense,
-      ),
-    );
-    handleCancelEdit();
+    setExpenses([]);
+    setBudgets({});
+    setCustomCategories([]);
+    setCategoryRules({});
+    setSearchQuery("");
+    setCategoryFilter(ALL_CATEGORIES);
   }
 
-  function handleCancelEdit() {
-    setEditingExpenseId(null);
-    setEditingDraft(null);
+  function learnCategoryRule(note: string, category: string) {
+    const keyword = getLearningKeyword(note);
+    if (!keyword || category === "Lainnya") return;
+
+    setCategoryRules((current) => ({
+      ...current,
+      [keyword]: category,
+    }));
   }
 
-  function handleDelete(id: string) {
-    setExpenses((current) => current.filter((expense) => expense.id !== id));
-    if (editingExpenseId === id) {
-      handleCancelEdit();
+  function handleQuickAdd(value: string) {
+    const result = parseQuickAddInput(value, customCategories, categoryRules);
+    if (!result.ok) return result;
+
+    const expense: Expense = {
+      id: crypto.randomUUID(),
+      amount: result.amount,
+      category: result.category,
+      note: result.note,
+      date:
+        today >= periodRange.startDate && today <= periodRange.endDate
+          ? today
+          : periodRange.startDate,
+    };
+
+    setExpenses((current) => [expense, ...current]);
+
+    return {
+      ok: true,
+      message: `Transaksi berhasil ditambahkan. ${result.message}`,
+    };
+  }
+
+  function handleCreateCategory(name: string) {
+    const categoryName = normalizeCategory(name);
+
+    if (!categoryName) {
+      return { ok: false, message: "Nama kategori wajib diisi." };
     }
+
+    if (isDuplicateCategoryName(categoryName, customCategories)) {
+      return { ok: false, message: "Kategori dengan nama ini sudah ada." };
+    }
+
+    setCustomCategories((current) => [...current, categoryName]);
+
+    return {
+      ok: true,
+      message: "Kategori baru berhasil dibuat.",
+      categoryName,
+    };
   }
 
   return (
     <main className="app-shell">
-      <section className="topbar" aria-label="Ringkasan aplikasi">
-        <div>
-          <p className="eyebrow">Catatan Pengeluaran</p>
-          <h1>Tracking pengeluaran harian, bulanan, dan tahunan</h1>
+      <section className="hero-section">
+        <div className="hero-copy">
+          <p className="eyebrow">Pencatat Pengeluaran</p>
+          <h1>Pantau pengeluaran bulanan dengan lebih rapi.</h1>
+          <p>
+            Dashboard personal yang ringan, cepat dipakai, dan tetap tersimpan di browser tanpa
+            login.
+          </p>
         </div>
-        <div className="period-control">
-          <div className="segmented" aria-label="Pilih periode rekap">
-            {(["day", "month", "year"] as FilterMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={filterMode === mode ? "active" : ""}
-                onClick={() => handleFilterModeChange(mode)}
-              >
-                {mode === "day" ? "Harian" : mode === "month" ? "Bulanan" : "Tahunan"}
-              </button>
-            ))}
-          </div>
-          <label>
-            <span>{filterLabel}</span>
-            <input
-              type={filterMode === "day" ? "date" : filterMode === "month" ? "month" : "number"}
-              min={filterMode === "year" ? "2000" : undefined}
-              max={filterMode === "year" ? "2100" : undefined}
-              value={filterValue}
-              onChange={(event) => setFilterValue(event.target.value)}
-            />
-          </label>
+
+        <div className="hero-actions">
+          <button className="primary-button" type="button" onClick={openCreateModal}>
+            <Plus size={19} />
+            Tambah Pengeluaran
+          </button>
         </div>
       </section>
 
-      <section className="summary-grid" aria-label="Ringkasan pengeluaran">
-        <article className="summary-card primary">
-          <div className="icon-box">
-            <CircleDollarSign size={22} />
-          </div>
-          <div>
-            <span>Total Pengeluaran</span>
-            <strong>{formatCurrency(summary.total)}</strong>
-          </div>
-        </article>
-        <article className="summary-card">
-          <div className="icon-box">
-            <ReceiptText size={22} />
-          </div>
-          <div>
-            <span>Total Transaksi</span>
-            <strong>{summary.transactionCount}</strong>
-          </div>
-        </article>
-        <article className="summary-card">
-          <div className="icon-box">
-            <Tags size={22} />
-          </div>
-          <div>
-            <span>Kategori Terbesar</span>
-            <strong>{summary.largestCategory?.category ?? "-"}</strong>
-          </div>
-        </article>
-      </section>
+      <PeriodSelector period={period} onChange={handlePeriodChange} />
+      <QuickAddExpense onQuickAdd={handleQuickAdd} />
 
-      <section className="workspace-grid">
-        <form className="expense-form" onSubmit={handleSubmit}>
-          <div className="section-heading">
-            <WalletCards size={22} />
-            <h2>Tambah Pengeluaran</h2>
+      <section className="dashboard-grid">
+        <article className="hero-card">
+          <div className="hero-card-top">
+            <div>
+              <span>Total Pengeluaran</span>
+              <strong>{formatCurrency(summary.total)}</strong>
+              <small>{getPeriodTitle(period)}</small>
+            </div>
+            <div className="hero-card-icon">
+              <Wallet size={28} />
+            </div>
           </div>
 
-          <label>
-            <span>Tanggal</span>
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-          </label>
-
-          <label>
-            <span>Nominal</span>
-            <input
-              type="number"
-              min="1"
-              inputMode="numeric"
-              placeholder="Contoh: 50000"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-            />
-          </label>
-
-          <label>
-            <span>Kategori</span>
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              {CATEGORIES.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            <span>Catatan</span>
-            <input
-              type="text"
-              placeholder="Opsional"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-            />
-          </label>
-
-          <div className="form-actions">
-            <button className="submit-button" type="submit">
-              <Plus size={20} />
-              Tambah Transaksi
-            </button>
-          </div>
-        </form>
-
-        <section className="category-panel" aria-label="Ringkasan kategori">
-          <div className="section-heading">
-            <ChartNoAxesColumnIncreasing size={22} />
-            <h2>Pengeluaran per Kategori</h2>
-          </div>
-
-          {summary.categoryTotals.length === 0 ? (
-            <div className="empty-state">Belum ada pengeluaran pada periode ini.</div>
+          {isMonthlyMode ? (
+            <BudgetProgress total={summary.total} budget={activeBudget} />
           ) : (
-            <div className="category-list">
-              {summary.categoryTotals.map((item) => {
-                const percentage = summary.total ? (item.total / summary.total) * 100 : 0;
-                return (
-                  <div className="category-row" key={item.category}>
-                    <div className="category-row-header">
-                      <span>
-                        <i style={{ background: categoryColors[item.category] }} />
-                        {item.category}
-                      </span>
-                      <strong>{formatCurrency(item.total)}</strong>
-                    </div>
-                    <div className="progress-track">
-                      <div
-                        className="progress-fill"
-                        style={{
-                          width: `${percentage}%`,
-                          background: categoryColors[item.category],
-                        }}
-                      />
-                    </div>
-                    <small>{percentage.toFixed(0)}% dari total periode</small>
-                  </div>
-                );
-              })}
+            <div className="budget-context">
+              <span>Budget bulanan sebagai konteks</span>
+              <strong>{formatCurrency(activeBudget)}</strong>
+              <p>Mode ini fokus pada total periode, bukan progress budget bulanan.</p>
             </div>
           )}
-        </section>
-      </section>
 
-      <section className="transaction-panel" aria-label="Daftar transaksi">
-        <div className="section-heading transaction-heading">
-          <CalendarDays size={22} />
-          <h2>Daftar Transaksi</h2>
+          {isMonthlyMode && (
+            <form className="budget-form" onSubmit={handleBudgetSubmit}>
+              <label>
+                <span>Budget bulanan</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Contoh: 3500000"
+                  value={formatNumberInput(budgetDraft)}
+                  onChange={(event) => setBudgetDraft(onlyDigits(event.target.value))}
+                />
+              </label>
+              <button className="secondary-button" type="submit">
+                <Save size={17} />
+                Simpan
+              </button>
+            </form>
+          )}
+        </article>
+
+        <div className="summary-grid" aria-label="Ringkasan bulan ini">
+          {isMonthlyMode ? (
+            <SummaryCard
+              label="Sisa Budget"
+              value={
+                activeBudget > 0
+                  ? remainingBudget >= 0
+                    ? formatCurrency(remainingBudget)
+                    : `-${formatCurrency(Math.abs(remainingBudget))}`
+                  : "Belum diatur"
+              }
+              helper={
+                activeBudget === 0
+                  ? "Tambahkan budget bulan ini"
+                  : remainingBudget >= 0
+                    ? "Masih aman untuk bulan ini"
+                    : "Melewati budget bulan ini"
+              }
+              icon={<PiggyBank size={21} />}
+            />
+          ) : (
+            <SummaryCard
+              label="Mode Rekap"
+              value={periodRange.mode === "year" ? "Tahunan" : "Custom"}
+              helper={periodRange.label.replace("Periode: ", "")}
+              icon={<PiggyBank size={21} />}
+            />
+          )}
+          <SummaryCard
+            label="Kategori Terbesar"
+            value={summary.largestCategory?.category.name ?? "-"}
+            helper={
+              summary.largestCategory
+                ? formatCurrency(summary.largestCategory.total)
+                : "Belum ada data"
+            }
+            icon={<BarChart3 size={21} />}
+          />
+          <SummaryCard
+            label="Jumlah Transaksi"
+            value={String(summary.transactionCount)}
+            helper="Transaksi bulan ini"
+            icon={<ReceiptText size={21} />}
+          />
+          <SummaryCard
+            label="Rata-rata"
+            value={formatCurrency(summary.average)}
+            helper="Per transaksi"
+            icon={<CalendarDays size={21} />}
+          />
         </div>
-
-        {filteredExpenses.length === 0 ? (
-          <div className="empty-state">Tidak ada transaksi yang cocok dengan filter.</div>
-        ) : (
-          <div className="transaction-list">
-            {filteredExpenses.map((expense) => (
-              <article
-                className={`transaction-item ${
-                  editingExpenseId === expense.id ? "is-editing" : ""
-                }`}
-                key={expense.id}
-              >
-                {editingExpenseId === expense.id && editingDraft ? (
-                  <form
-                    className="transaction-edit-form"
-                    onSubmit={(event) => handleSaveEdit(event, expense.id)}
-                  >
-                    <label>
-                      <span>Tanggal</span>
-                      <input
-                        type="date"
-                        value={editingDraft.date}
-                        onChange={(event) => updateEditingDraft("date", event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      <span>Nominal</span>
-                      <input
-                        type="number"
-                        min="1"
-                        inputMode="numeric"
-                        value={editingDraft.amount}
-                        onChange={(event) => updateEditingDraft("amount", event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      <span>Kategori</span>
-                      <select
-                        value={editingDraft.category}
-                        onChange={(event) => updateEditingDraft("category", event.target.value)}
-                      >
-                        {CATEGORIES.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Catatan</span>
-                      <input
-                        type="text"
-                        value={editingDraft.note}
-                        onChange={(event) => updateEditingDraft("note", event.target.value)}
-                      />
-                    </label>
-                    <div className="inline-edit-actions">
-                      <button className="save-inline-button" type="submit" title="Simpan edit">
-                        <Save size={18} />
-                        Simpan
-                      </button>
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        title="Batal edit"
-                        onClick={handleCancelEdit}
-                      >
-                        <X size={18} />
-                        Batal
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <>
-                    <div className="transaction-main">
-                      <span className="category-chip">
-                        <i style={{ background: categoryColors[expense.category] }} />
-                        {expense.category}
-                      </span>
-                      <strong>{expense.note || "Tanpa catatan"}</strong>
-                      <small>{dateFormatter.format(new Date(`${expense.date}T00:00:00`))}</small>
-                    </div>
-                    <div className="transaction-action">
-                      <strong>{formatCurrency(expense.amount)}</strong>
-                      <button
-                        className="edit-button"
-                        type="button"
-                        aria-label={`Edit transaksi ${expense.note || expense.category}`}
-                        title="Edit transaksi"
-                        onClick={() => handleEdit(expense)}
-                      >
-                        <Pencil size={18} />
-                      </button>
-                      <button
-                        className="delete-button"
-                        type="button"
-                        aria-label={`Hapus transaksi ${expense.note || expense.category}`}
-                        title="Hapus transaksi"
-                        onClick={() => handleDelete(expense.id)}
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </article>
-            ))}
-          </div>
-        )}
       </section>
+
+      <InsightCard
+        summary={summary}
+        monthlyBudget={isMonthlyMode ? activeBudget : 0}
+        selectedMonth={activeBudgetMonth}
+        onDemo={handleDemoData}
+      />
+
+      <section className="content-grid">
+        <CategoryChart
+          total={summary.total}
+          categoryTotals={summary.categoryTotals}
+          comparisons={categoryComparisons}
+          comparisonHelperText={periodRange.comparisonHelperText}
+        />
+        <TransactionList
+          monthlyExpenses={periodExpenses}
+          visibleExpenses={visibleExpenses}
+          categories={allCategories}
+          searchQuery={searchQuery}
+          categoryFilter={categoryFilter}
+          onSearchChange={setSearchQuery}
+          onCategoryFilterChange={setCategoryFilter}
+          onAdd={openCreateModal}
+          onDemo={handleDemoData}
+          onEdit={openEditModal}
+          onDelete={handleDelete}
+        />
+      </section>
+
+      <div className="utility-actions">
+        <button className="ghost-button" type="button" onClick={handleDemoData}>
+          <Zap size={17} />
+          Demo 3 Bulan
+        </button>
+        <button className="danger-button" type="button" onClick={handleResetData}>
+          <RotateCcw size={17} />
+          Reset Data
+        </button>
+      </div>
+
+      <button className="mobile-fab" type="button" onClick={openCreateModal}>
+        <Plus size={22} />
+        Tambah
+      </button>
+
+      <ExpenseModal
+        isOpen={isExpenseModalOpen}
+        editingExpense={editingExpense}
+        draft={draft}
+        formErrors={formErrors}
+        categories={allCategories}
+        onClose={closeExpenseModal}
+        onSubmit={handleExpenseSubmit}
+        onDraftChange={updateDraft}
+        onCreateCategory={handleCreateCategory}
+      />
     </main>
   );
 }
